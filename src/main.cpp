@@ -3,6 +3,7 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <time.h>
+#include <TZ.h>
 
 #include <Credentials.h>
 
@@ -16,7 +17,6 @@ const char *mqttTopic = MQTT_TOPIC;
 const char *mqttClientId = MQTT_ID;
 const char *mqttUser = MQTT_USER;
 const char *mqttPass = MQTT_PASS;
-
 
 // Выдан YandexInternalRootCA до 11 февраля 2033 г. 18:51:42
 static const char ISRG_Root_x1[] PROGMEM = R"EOF(
@@ -50,6 +50,8 @@ yjRCkJ0YagpeLxfV1l1ZJZaTPZvY9+ylHnWHhzlq0FzcrooSSsp4i44DB2K7O2ID
 Pj78bnC5yCw8P5YylR45LdxLzLO68unoXOyFz1etGXzszw8lJI9LNubYxk77mK8H
 LpuQKbSbIERsmR+QqQ==
 -----END CERTIFICATE-----
+
+
 )EOF";
 
 BearSSL::X509List certISRG(ISRG_Root_x1);
@@ -92,7 +94,7 @@ bool wifiConnected()
     Serial.println(WiFi.localIP());
 
     // Для работы TLS-соединения нужны корректные дата и время, получаем их с NTP серверов
-    configTime(3 * 3600, 0, "pool.ntp.org", "time.nist.gov");
+    configTime(3 * 3600, 0, "ntp0.NL.net", "ntp.ix.ru");
     // Ждем, пока локальное время синхронизируется
     Serial.print("Waiting for NTP time sync: ");
     i = 0;
@@ -222,15 +224,42 @@ String wifiScanResultJSON()
 
     serializeJson(array, result);
     return result;
-  } 
+  }
 
   return "";
+}
+
+void send_message(String message)
+{
+  if (wifiConnected() && mqttConnected())
+  {
+    if (mqttClient.beginPublish(mqttTopic, message.length(), true))
+    {
+      Serial.println("Begin publish");
+      for (int i = 0; i < message.length(); i++)
+      {
+        mqttClient.print(message[i]);
+      }
+
+      if (mqttClient.endPublish())
+      {
+        Serial.println("Uploaded");
+      }
+      else
+      {
+        Serial.println("Not uploaded");
+      }
+    }
+    else
+    {
+      Serial.println("Publish failed");
+    }
+  }
 }
 
 void setup()
 {
   Serial.begin(115200);
-  
 }
 
 void loop()
@@ -239,18 +268,7 @@ void loop()
   Serial.println();
   Serial.println(scanResult);
 
-  yield();
-
-  delay(2000);
-
-  if (wifiConnected() && mqttConnected()){
-    if (mqttClient.publish(mqttTopic, scanResult.c_str())){
-      Serial.println("uploaded");
-    } else {
-      Serial.println("not uploaded");
-      Serial.println(mqttClient.state());
-    }
-  }
+  send_message(scanResult);
 
   yield();
 
