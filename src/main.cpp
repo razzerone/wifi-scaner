@@ -134,6 +134,8 @@ bool mqttConnected()
     Serial.print("Connecting to MQTT broker: ");
     // Настраиваем MQTT клиент
     mqttClient.setServer(mqttServer, mqttPort);
+    mqttClient.setKeepAlive(15);
+    mqttClient.setSocketTimeout(15);
 
     if (mqttClient.connect(mqttClientId, mqttUser, mqttPass))
     {
@@ -268,5 +270,7 @@ void loop()
 
   send_message(scanResult);
 
-  delay(10000);
+  yield();
+
+  delay(15000);
 }
