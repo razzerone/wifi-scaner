@@ -1,8 +1,10 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <time.h>
+#include <TZ.h>
 
 #include <Credentials.h>
 
@@ -17,45 +19,72 @@ const char *mqttClientId = MQTT_ID;
 const char *mqttUser = MQTT_USER;
 const char *mqttPass = MQTT_PASS;
 
+struct Credentials
+{
+  const char *deviceID;
+  const char *password;
+};
+
+static const Credentials defaultCredentials{MQTT_ID, MQTT_PASS};
 
 // Выдан YandexInternalRootCA до 11 февраля 2033 г. 18:51:42
 static const char ISRG_Root_x1[] PROGMEM = R"EOF(
 -----BEGIN CERTIFICATE-----
-MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw
-TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh
-cmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwHhcNMTUwNjA0MTEwNDM4
-WhcNMzUwNjA0MTEwNDM4WjBPMQswCQYDVQQGEwJVUzEpMCcGA1UEChMgSW50ZXJu
-ZXQgU2VjdXJpdHkgUmVzZWFyY2ggR3JvdXAxFTATBgNVBAMTDElTUkcgUm9vdCBY
-MTCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBAK3oJHP0FDfzm54rVygc
-h77ct984kIxuPOZXoHj3dcKi/vVqbvYATyjb3miGbESTtrFj/RQSa78f0uoxmyF+
-0TM8ukj13Xnfs7j/EvEhmkvBioZxaUpmZmyPfjxwv60pIgbz5MDmgK7iS4+3mX6U
-A5/TR5d8mUgjU+g4rk8Kb4Mu0UlXjIB0ttov0DiNewNwIRt18jA8+o+u3dpjq+sW
-T8KOEUt+zwvo/7V3LvSye0rgTBIlDHCNAymg4VMk7BPZ7hm/ELNKjD+Jo2FR3qyH
-B5T0Y3HsLuJvW5iB4YlcNHlsdu87kGJ55tukmi8mxdAQ4Q7e2RCOFvu396j3x+UC
-B5iPNgiV5+I3lg02dZ77DnKxHZu8A/lJBdiB3QW0KtZB6awBdpUKD9jf1b0SHzUv
-KBds0pjBqAlkd25HN7rOrFleaJ1/ctaJxQZBKT5ZPt0m9STJEadao0xAH0ahmbWn
-OlFuhjuefXKnEgV4We0+UXgVCwOPjdAvBbI+e0ocS3MFEvzG6uBQE3xDk3SzynTn
-jh8BCNAw1FtxNrQHusEwMFxIt4I7mKZ9YIqioymCzLq9gwQbooMDQaHWBfEbwrbw
-qHyGO0aoSCqI3Haadr8faqU9GY/rOPNk3sgrDQoo//fb4hVC1CLQJ13hef4Y53CI
-rU7m2Ys6xt0nUW7/vGT1M0NPAgMBAAGjQjBAMA4GA1UdDwEB/wQEAwIBBjAPBgNV
-HRMBAf8EBTADAQH/MB0GA1UdDgQWBBR5tFnme7bl5AFzgAiIyBpY9umbbjANBgkq
-hkiG9w0BAQsFAAOCAgEAVR9YqbyyqFDQDLHYGmkgJykIrGF1XIpu+ILlaS/V9lZL
-ubhzEFnTIZd+50xx+7LSYK05qAvqFyFWhfFQDlnrzuBZ6brJFe+GnY+EgPbk6ZGQ
-3BebYhtF8GaV0nxvwuo77x/Py9auJ/GpsMiu/X1+mvoiBOv/2X/qkSsisRcOj/KK
-NFtY2PwByVS5uCbMiogziUwthDyC3+6WVwW6LLv3xLfHTjuCvjHIInNzktHCgKQ5
-ORAzI4JMPJ+GslWYHb4phowim57iaztXOoJwTdwJx4nLCgdNbOhdjsnvzqvHu7Ur
-TkXWStAmzOVyyghqpZXjFaH3pO3JLF+l+/+sKAIuvtd7u+Nxe5AW0wdeRlN8NwdC
-jNPElpzVmbUq4JUagEiuTDkHzsxHpFKVK7q4+63SM1N95R1NbdWhscdCb+ZAJzVc
-oyi3B43njTOQ5yOf+1CceWxG1bQVs5ZufpsMljq4Ui0/1lvh+wjChP4kqKOJ2qxq
-4RgqsahDYVvTH9w7jXbyLeiNdd8XM2w9U/t7y0Ff/9yi0GE44Za4rF2LN9d11TPA
-mRGunUHBcnWEvgJBQl9nJEiU0Zsnvgc/ubhPgXRR4Xq37Z0j4r7g1SgEEzwxA57d
-emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
+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
+LpuQKbSbIERsmR+QqQ==
 -----END CERTIFICATE-----
+
+
 )EOF";
 
 BearSSL::X509List certISRG(ISRG_Root_x1);
 BearSSL::WiFiClientSecure wifiClient;
 PubSubClient mqttClient(wifiClient);
+HTTPClient httpClient;
+
+String ReplaceAll(String str, const String &from, const String &to)
+{
+  size_t start_pos = 0;
+  while ((start_pos = str.indexOf(from, start_pos)) != std::string::npos)
+  {
+    str.replace(from, to);
+    start_pos += to.length(); // Handles case where 'to' is a substring of 'from'
+  }
+  return str;
+}
+
+String getLocalMAC()
+{
+  return ReplaceAll(WiFi.macAddress(), ":", "-");
+}
+
+const String url = "/credentials/" + getLocalMAC();
 
 bool wifiConnected()
 {
@@ -93,7 +122,7 @@ bool wifiConnected()
     Serial.println(WiFi.localIP());
 
     // Для работы TLS-соединения нужны корректные дата и время, получаем их с NTP серверов
-    configTime(3 * 3600, 0, "pool.ntp.org", "time.nist.gov");
+    configTime(3 * 3600, 0, "ntp0.NL.net", "ntp.ix.ru");
     // Ждем, пока локальное время синхронизируется
     Serial.print("Waiting for NTP time sync: ");
     i = 0;
@@ -133,6 +162,8 @@ bool mqttConnected()
     Serial.print("Connecting to MQTT broker: ");
     // Настраиваем MQTT клиент
     mqttClient.setServer(mqttServer, mqttPort);
+    mqttClient.setKeepAlive(15);
+    mqttClient.setSocketTimeout(15);
 
     if (mqttClient.connect(mqttClientId, mqttUser, mqttPass))
     {
@@ -147,6 +178,53 @@ bool mqttConnected()
     return mqttClient.connected();
   };
   return true;
+}
+
+Credentials getCredentials()
+{
+  Serial.println("Connecting to credentials server");
+
+  if (httpClient.begin(wifiClient, SERVER_HOST, SERVER_PORT, url, true))
+  { // HTTPS
+
+    Serial.println("Correct credentials server");
+    httpClient.addHeader("Authorization", SERVER_KEY);
+    int httpCode = httpClient.GET();
+
+    if (httpCode > 0)
+    {
+      Serial.println("Credentials server connection successful");
+
+      if (httpCode == HTTP_CODE_OK)
+      {
+        Serial.println("Credentials server connection successful");
+
+        StaticJsonDocument<128> credJSON;
+ 
+        DeserializationError err = deserializeJson(credJSON, httpClient.getString());
+
+        Serial.printf("serialization result: %s", err.c_str());
+
+        if (err != DeserializationError::Ok)
+        {
+          return defaultCredentials;
+        }
+
+        return Credentials{
+          credJSON["deviceID"].as<const char*>(), 
+          credJSON["password"].as<const char*>()
+          };
+      }
+    }
+    Serial.printf("error: %s\n", httpClient.errorToString(httpCode).c_str());
+    httpClient.end();
+  }
+  else
+  {
+    Serial.printf("[HTTPS] Unable to connect\n");
+  }
+
+  return defaultCredentials;
 }
 
 String get_str_from_bssid(uint8_t *bssid)
@@ -172,64 +250,91 @@ String wifiScanResultJSON()
     int32_t channel;
     bool hidden;
 
-    StaticJsonDocument<1024> arr_doc;
-    JsonArray array = arr_doc.to<JsonArray>();
+    DynamicJsonDocument array(4096);
 
     for (int8_t i = 0; i < scanResult; i++)
     {
-      DynamicJsonDocument doc(200);
+      JsonObject doc = array.createNestedObject();
 
       WiFi.getNetworkInfo(i, ssid, encryptionType, rssi, bssid, channel, hidden);
 
       doc["ssid"] = ssid;
       doc["bssid"] = get_str_from_bssid(bssid);
 
-      const bss_info *bssInfo = WiFi.getScanInfoByIndex(i);
-      String phyMode;
-      const char *wps = "";
-      if (bssInfo)
-      {
-        phyMode.reserve(12);
-        phyMode = F("802.11");
-        String slash;
-        if (bssInfo->phy_11b)
-        {
-          phyMode += 'b';
-          slash = '/';
-        }
-        if (bssInfo->phy_11g)
-        {
-          phyMode += slash + 'g';
-          slash = '/';
-        }
-        if (bssInfo->phy_11n)
-        {
-          phyMode += slash + 'n';
-        }
-        if (bssInfo->wps)
-        {
-          wps = PSTR("WPS");
-        }
-      }
-
-      array.add(doc);
+      // const bss_info *bssInfo = WiFi.getScanInfoByIndex(i);
+      // String phyMode;
+      // const char *wps = "";
+      // if (bssInfo)
+      // {
+      //   phyMode.reserve(12);
+      //   phyMode = F("802.11");
+      //   String slash;
+      //   if (bssInfo->phy_11b)
+      //   {
+      //     phyMode += 'b';
+      //     slash = '/';
+      //   }
+      //   if (bssInfo->phy_11g)
+      //   {
+      //     phyMode += slash + 'g';
+      //     slash = '/';
+      //   }
+      //   if (bssInfo->phy_11n)
+      //   {
+      //     phyMode += slash + 'n';
+      //   }
+      //   if (bssInfo->wps)
+      //   {
+      //     wps = PSTR("WPS");
+      //   }
+      // }
 
       yield();
     }
 
     String result;
 
-    serializeJson(array, result);
+    ArduinoJson::serializeJson(array, result);
     return result;
-  } 
+  }
 
   return "";
+}
+
+void send_message(String message)
+{
+  if (wifiConnected() && mqttConnected())
+  {
+    if (mqttClient.beginPublish(mqttTopic, message.length(), true))
+    {
+      Serial.println("Begin publish");
+      int step = div(message.length(), 50).quot;
+      for (int i = 0; i < step; i++)
+      {
+        mqttClient.print(message.substring(i * 50, i * 50 + 51));
+      }
+      
+      mqttClient.print(message.substring(step * 50));
+
+      if (mqttClient.endPublish())
+      {
+        Serial.println("Uploaded");
+      }
+      else
+      {
+        Serial.println("Not uploaded");
+      }
+    }
+    else
+    {
+      Serial.println("Publish failed");
+    }
+  }
 }
 
 void setup()
 {
   Serial.begin(115200);
-  
 }
 
 void loop()
@@ -238,21 +343,9 @@ void loop()
   Serial.println();
   Serial.println(scanResult);
 
-  // if (wifiConnected() && mqttConnected()){
-  //   if (mqttClient.publish(mqttTopic, scanResult.c_str())){
-  //     Serial.println("uploaded");
-  //   } else {
-  //     Serial.println("not uploaded");
-  //   }
-  // }
+  send_message(scanResult);
 
-  if (wifiConnected() && mqttConnected()){
-    if (mqttClient.publish(mqttTopic, "113")){
-      Serial.println("uploaded");
-    } else {
-      Serial.println("not uploaded");
-    }
-  }
+  yield();
 
-  delay(10000);
+  delay(15000);
 }
